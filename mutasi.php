@@ -15,6 +15,7 @@ $stmt = $pdo->query("
     SELECT m.id_mutasi,
            b.kode_barang,
            b.nama_barang,
+           b.aktif,
            m.in_qty,
            m.out_qty,
            m.tanggal,
@@ -62,7 +63,7 @@ $daftar_mutasi = $stmt->fetchAll(PDO::FETCH_ASSOC);
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
     <a class="navbar-brand" href="#">Aplikasi Stok Barang</a>
     <div class="ml-auto">
-        <span class="navbar-text text-white mr-3"><?= htmlentities($session_nama) ?> (<?= $session_role ?>)</span>
+        <span class="navbar-text text-white mr-3"><?= htmlentities($session_nama) ?> (<?= htmlentities($session_role) ?>)</span>
         <a class="btn btn-outline-light btn-sm" href="logout.php" onclick="return confirm('Yakin ingin logout?')">Logout</a>
     </div>
 </nav>
@@ -76,21 +77,22 @@ $daftar_mutasi = $stmt->fetchAll(PDO::FETCH_ASSOC);
 <!-- Konten Utama -->
 <div class="content">
         <?php if ($_SESSION['role'] != 'karyawan'): ?>
-      <div class="card mb-4">
-    <div class="card-header">
-    <form method="GET" class="form-inline mb-3">
-        <h4>Generate Laporan</h4>
+    <?php $bulan = isset($_GET['bulan']) ? $_GET['bulan'] : ''; ?>
+    <div class="card mb-4">
+        <div class="card-header">
+            <h4>Generate Laporan</h4>
         </div>
-    <div class="card-body">
-        <label for="bulan" class="mr-2">Pilih Bulan</label>
-        <input type="month" name="bulan" id="bulan" class="form-control mr-2" value="<?= isset($_GET['bulan']) ? $_GET['bulan'] : '' ?>" required>
-        <button type="submit" class="btn btn-primary">Simpan</button>
-        <?php if (isset($_GET['bulan'])): ?>
-            <a href="export_pdf.php?bulan=<?= $_GET['bulan'] ?>" class="btn btn-danger ml-2">Export PDF</a>
-            <?php endif; ?>
-        </form>
+        <div class="card-body">
+            <form method="GET" class="form-inline">
+                <label for="bulan" class="mr-2">Pilih Bulan</label>
+                <input type="month" name="bulan" id="bulan" class="form-control mr-2" value="<?= htmlentities($bulan) ?>" required>
+                <button type="submit" class="btn btn-primary">Simpan</button>
+                <?php if ($bulan !== ''): ?>
+                    <a href="export_pdf.php?bulan=<?= urlencode($bulan) ?>" class="btn btn-danger ml-2">Export PDF</a>
+                <?php endif; ?>
+            </form>
         </div>
-        </div>
+    </div>
         <?php endif; ?>
             <h4>Data Mutasi Barang</h4>
     <div class="table-responsive">
@@ -112,7 +114,10 @@ $daftar_mutasi = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     <tr>
                         <td><?= $no++; ?></td>
                         <td><?= htmlentities($m['kode_barang']); ?></td>
-                        <td><?= htmlentities($m['nama_barang']); ?></td>
+                        <td>
+                            <?= htmlentities($m['nama_barang']); ?>
+                            <?php if (!$m['aktif']): ?><span class="badge badge-secondary">dihapus</span><?php endif; ?>
+                        </td>
                         <td class="text-center"><?= $m['in_qty']; ?></td>
                         <td class="text-center"><?= $m['out_qty']; ?></td>
                         <td><?= date('d-m-Y H:i', strtotime($m['tanggal'])); ?></td>

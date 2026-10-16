@@ -17,8 +17,9 @@ if (isset($_POST['login'])) {
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($user && password_verify($password, $user['password_hash'])) {
-            // Login berhasil: simpan session
-            $_SESSION['id_user']      = $user['id_user'];
+            // Login berhasil: buat ID session baru (cegah session fixation), lalu simpan session
+            session_regenerate_id(true);
+            $_SESSION['id_user']     = $user['id_user'];
             $_SESSION['username']     = $user['username'];
             $_SESSION['nama_lengkap'] = $user['nama_lengkap'];
             $_SESSION['role']         = $user['role'];

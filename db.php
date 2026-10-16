@@ -1,14 +1,19 @@
 <?php
 // db.php
-$host   = 'localhost';
-$dbname = 'stok_db';
-$user   = 'root';      // ganti sesuai user MySQL Anda
-$pass   = '';          // ganti sesuai password MySQL Anda
+// Kredensial dibaca dari config.php (tidak di-commit). Salin config.example.php menjadi config.php.
+$config = file_exists(__DIR__ . '/config.php')
+    ? require __DIR__ . '/config.php'
+    : require __DIR__ . '/config.example.php';
 
 try {
-    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $user, $pass);
+    $pdo = new PDO(
+        "mysql:host={$config['db_host']};dbname={$config['db_name']};charset=utf8mb4",
+        $config['db_user'],
+        $config['db_pass']
+    );
     // Set error mode ke Exception
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 } catch (PDOException $e) {
-    die("Koneksi database gagal: " . $e->getMessage());
+    error_log("Koneksi database gagal: " . $e->getMessage());
+    die("Koneksi database gagal. Periksa konfigurasi di config.php.");
 }

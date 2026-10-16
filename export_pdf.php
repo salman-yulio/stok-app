@@ -1,11 +1,22 @@
 <?php
+session_start();
+if (!isset($_SESSION['id_user'])) {
+    header("Location: login.php");
+    exit;
+}
+// Laporan hanya untuk owner & admin (sama seperti di mutasi.php)
+if ($_SESSION['role'] == 'karyawan') {
+    http_response_code(403);
+    die("Anda tidak punya akses ke laporan.");
+}
+
 require 'db.php';
 require 'vendor/autoload.php'; // jika pakai Composer
 
 use Dompdf\Dompdf;
 
-if (!isset($_GET['bulan'])) {
-    die("Bulan belum dipilih.");
+if (!isset($_GET['bulan']) || !preg_match('/^\d{4}-\d{2}$/', $_GET['bulan'])) {
+    die("Bulan belum dipilih atau formatnya salah.");
 }
 
 $bulan = $_GET['bulan'];
@@ -14,6 +25,7 @@ $stmt = $pdo->prepare("
     SELECT 
         b.kode_barang, 
         b.nama_barang,
+        b.aktif,
         SUM(m.in_qty) AS total_in,
         SUM(m.out_qty) AS total_out
     FROM mutasi m
@@ -39,8 +51,8 @@ $html .= '<table border="1" cellpadding="6" cellspacing="0" width="100%">
 
 foreach ($data as $row) {
     $html .= '<tr>
-        <td>' . $row['kode_barang'] . '</td>
-        <td>' . $row['nama_barang'] . '</td>
+        <td>' . htmlentities($row['kode_barang']) . '</td>
+        <td>' . htmlentities($row['nama_barang']) . ($row['aktif'] ? '' : ' (dihapus)') . '</td>
         <td align="center">' . $row['total_in'] . '</td>
         <td align="center">' . $row['total_out'] . '</td>
     </tr>';

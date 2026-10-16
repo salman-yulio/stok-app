@@ -12,6 +12,19 @@ $session_id  = $_SESSION['id_user'];
 $session_nama= $_SESSION['nama_lengkap'];
 $session_role= $_SESSION['role'];
 
+// Hak akses (dicek di server, bukan hanya disembunyikan di tampilan)
+$boleh_ubah  = $session_role != 'owner';                                  // tambah & edit
+$boleh_hapus = $session_role != 'owner' && $session_role != 'karyawan';   // hapus
+$ubah_ditolak  = (isset($_POST['add_barang']) || isset($_POST['edit_barang'])) && !$boleh_ubah;
+$hapus_ditolak = isset($_GET['delete']) && !$boleh_hapus;
+if ($ubah_ditolak || $hapus_ditolak) {
+    $_SESSION['msg_error'] = "Anda tidak punya akses untuk aksi ini.";
+    header("Location: index.php");
+    exit;
+}
+
+$pesan_kode_duplikat = "Kode barang sudah dipakai (termasuk oleh barang yang sudah dihapus).";
+
 // Proses Tambah Barang
 if (isset($_POST['add_barang'])) {
     $nama      = trim($_POST['nama_barang']);
@@ -28,14 +41,22 @@ if (isset($_POST['add_barang'])) {
         // Insert barang baru
         $stmt = $pdo->prepare("INSERT INTO barang (nama_barang, kategori, kode_barang, harga, satuan, jumlah)
                               VALUES (:nama, :kategori, :kode, :harga, :satuan, :jumlah)");
-        $stmt->execute([
-            'nama'     => $nama,
-            'kategori' => $kategori,
-            'kode'     => $kode,
-            'harga'    => $harga,
-            'satuan'   => $satuan,
-            'jumlah'   => $jumlah
-        ]);
+        try {
+            $stmt->execute([
+                'nama'     => $nama,
+                'kategori' => $kategori,
+                'kode'     => $kode,
+                'harga'    => $harga,
+                'satuan'   => $satuan,
+                'jumlah'   => $jumlah
+            ]);
+        } catch (PDOException $e) {
+            // 23000 = kode_barang sudah ada (UNIQUE)
+            if ($e->getCode() != '23000') throw $e;
+            $_SESSION['msg_error'] = $pesan_kode_duplikat;
+            header("Location: index.php");
+            exit;
+        }
         // Ambil id_barang yang baru
         $lastId  = $pdo->lastInsertId();
 
@@ -64,28 +85,37 @@ if (isset($_POST['edit_barang'])) {
     $harga     = floatval($_POST['harga']);
     $satuan    = trim($_POST['satuan']);
     $jumlahBaru= intval($_POST['jumlah']);
-    // Ambil data lama (untuk menghitung selisih)
-    $oldStmt = $pdo->prepare("SELECT jumlah FROM barang WHERE id_barang = :id");
+    // Ambil data lama (untuk menghitung selisih). Barang yang sudah dihapus tidak bisa diedit.
+    $oldStmt = $pdo->prepare("SELECT jumlah FROM barang WHERE id_barang = :id AND aktif = 1");
     $oldStmt->execute(['id' => $id]);
     $oldData = $oldStmt->fetch(PDO::FETCH_ASSOC);
-    $oldJumlah = intval($oldData['jumlah']);
+    $oldJumlah = $oldData ? intval($oldData['jumlah']) : 0;
 
-    if ($nama == '' || $kategori == '' || $kode == '' || $harga <= 0 || $satuan == '') {
+    if (!$oldData) {
+        $_SESSION['msg_error'] = "Barang tidak ditemukan.";
+    } elseif ($nama == '' || $kategori == '' || $kode == '' || $harga <= 0 || $satuan == '') {
         $_SESSION['msg_error'] = "Semua field wajib diisi dan harga > 0.";
     } else {
         // Update data barang
         $ustmt = $pdo->prepare("UPDATE barang SET nama_barang = :nama, kategori = :kategori, 
                                     kode_barang = :kode, harga = :harga, satuan = :satuan, jumlah = :jumlah 
-                                WHERE id_barang = :id");
-        $ustmt->execute([
-            'nama'     => $nama,
-            'kategori' => $kategori,
-            'kode'     => $kode,
-            'harga'    => $harga,
-            'satuan'   => $satuan,
-            'jumlah'   => $jumlahBaru,
-            'id'       => $id
-        ]);
+                                WHERE id_barang = :id AND aktif = 1");
+        try {
+            $ustmt->execute([
+                'nama'     => $nama,
+                'kategori' => $kategori,
+                'kode'     => $kode,
+                'harga'    => $harga,
+                'satuan'   => $satuan,
+                'jumlah'   => $jumlahBaru,
+                'id'       => $id
+            ]);
+        } catch (PDOException $e) {
+            if ($e->getCode() != '23000') throw $e;
+            $_SESSION['msg_error'] = $pesan_kode_duplikat;
+            header("Location: index.php");
+            exit;
+        }
 
         // Hitung selisih
         $selisih = $jumlahBaru - $oldJumlah;
@@ -117,8 +147,8 @@ if (isset($_POST['edit_barang'])) {
 // Proses Delete Barang
 if (isset($_GET['delete'])) {
     $idDel = intval($_GET['delete']);
-    // Hapus barang (otomatis mutasi terkait juga akan dihapus karena ON DELETE CASCADE)
-    $dstmt = $pdo->prepare("DELETE FROM barang WHERE id_barang = :id");
+    // Soft delete: barang hanya disembunyikan (aktif = 0) supaya riwayat mutasi & laporan tetap utuh
+    $dstmt = $pdo->prepare("UPDATE barang SET aktif = 0 WHERE id_barang = :id");
     $dstmt->execute(['id' => $idDel]);
     $_SESSION['msg_success'] = "Data barang berhasil dihapus.";
     header("Location: index.php");
@@ -129,12 +159,12 @@ if (isset($_GET['delete'])) {
 $key = '';
 if (isset($_GET['keyword'])) {
     $key = trim($_GET['keyword']);
-    $qstmt = $pdo->prepare("SELECT * FROM barang 
-                            WHERE nama_barang LIKE :kw OR kode_barang LIKE :kw 
+    $qstmt = $pdo->prepare("SELECT * FROM barang
+                            WHERE aktif = 1 AND (nama_barang LIKE :kw OR kode_barang LIKE :kw)
                             ORDER BY nama_barang ASC");
     $qstmt->execute(['kw' => "%$key%"]);
 } else {
-    $qstmt = $pdo->query("SELECT * FROM barang ORDER BY nama_barang ASC");
+    $qstmt = $pdo->query("SELECT * FROM barang WHERE aktif = 1 ORDER BY nama_barang ASC");
 }
 $daftar_barang = $qstmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
@@ -174,7 +204,7 @@ $daftar_barang = $qstmt->fetchAll(PDO::FETCH_ASSOC);
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
     <a class="navbar-brand" href="#">Aplikasi Stok Barang</a>
     <div class="ml-auto">
-        <span class="navbar-text text-white mr-3"><?= htmlentities($session_nama) ?> (<?= $session_role ?>)</span>
+        <span class="navbar-text text-white mr-3"><?= htmlentities($session_nama) ?> (<?= htmlentities($session_role) ?>)</span>
         <a class="btn btn-outline-light btn-sm" href="logout.php" onclick="return confirm('Yakin ingin logout?')">Logout</a>
     </div>
 </nav>
